@@ -1,5 +1,5 @@
 use rand_distr::{Distribution, Normal};
-use semifit::models::diode::{DiodeParams, current};
+use semifit_core::models::diode::{DiodeParams, current};
 use std::fs::{self, File};
 use std::io::Write;
 

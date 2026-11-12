@@ -1,5 +1,5 @@
-use semifit::data::IvCurve;
-use semifit::extract::diode_log_fit;
+use semifit_core::data::IvCurve;
+use semifit_core::extract::diode_log_fit;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let curva = IvCurve::from_csv_file("datos/diodo_sintetico.csv")?;
