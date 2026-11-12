@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>semifit — prueba WASM</title>
+</head>
+<body>
+  <h1>semifit: núcleo Rust en el navegador</h1>
+  <input type="file" id="archivo" accept=".csv,.txt">
+  <pre id="salida">Elige un archivo CSV…</pre>
+
+  <script type="module">
+    import init, { extract_diode } from "./pkg/semifit_web.js";
+    await init(); // carga el .wasm
+
+    const salida = document.getElementById("salida");
+    document.getElementById("archivo").addEventListener("change", async (e) => {
+      const texto = await e.target.files[0].text();
+      try {
+        const r = extract_diode(texto, 300.0, 0.3, 0.7);
+        salida.textContent =
+          `Puntos usados: ${r.points_used}\n` +
+          `R²: ${r.r2.toFixed(6)}\n` +
+          `Is = ${r.is.toExponential(4)} A\n` +
+          `n  = ${r.n.toFixed(4)}\n\n` +
+          r.model_card;
+      } catch (err) {
+        salida.textContent = "Error: " + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
