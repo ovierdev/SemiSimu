@@ -2,32 +2,37 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>semifit — prueba WASM</title>
+  <title>semifit — extractor de parámetros</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script type="module" src="./main.js"></script>
 </head>
 <body>
-  <h1>semifit: núcleo Rust en el navegador</h1>
-  <input type="file" id="archivo" accept=".csv,.txt">
-  <pre id="salida">Elige un archivo CSV…</pre>
+  <h1>semifit</h1>
 
-  <script type="module">
-    import init, { extract_diode } from "./pkg/semifit_web.js";
-    await init(); // carga el .wasm
+  <div class="controles">
+    <label>Archivo CSV (V, I)
+      <input type="file" id="archivo" accept=".csv,.txt">
+    </label>
+    <label>T [K] <input type="number" id="temp" value="300" step="1"></label>
+    <label>V<sub>min</sub> [V] <input type="number" id="vmin" value="0.30" step="0.01"></label>
+    <label>V<sub>max</sub> [V] <input type="number" id="vmax" value="0.70" step="0.01"></label>
+    <label><span><input type="checkbox" id="escalaLog" checked> Escala log</span></label>
+  </div>
 
-    const salida = document.getElementById("salida");
-    document.getElementById("archivo").addEventListener("change", async (e) => {
-      const texto = await e.target.files[0].text();
-      try {
-        const r = extract_diode(texto, 300.0, 0.3, 0.7);
-        salida.textContent =
-          `Puntos usados: ${r.points_used}\n` +
-          `R²: ${r.r2.toFixed(6)}\n` +
-          `Is = ${r.is.toExponential(4)} A\n` +
-          `n  = ${r.n.toFixed(4)}\n\n` +
-          r.model_card;
-      } catch (err) {
-        salida.textContent = "Error: " + err.message;
-      }
-    });
-  </script>
+  <p id="estado"></p>
+  <div id="grafica"></div>
+
+  <div class="resultado">
+    <div>
+      <strong>Parámetros</strong>
+      <pre id="params">—</pre>
+    </div>
+    <div>
+      <strong>Tarjeta SPICE</strong>
+      <pre id="tarjeta">—</pre>
+      <button id="copiar">Copiar</button>
+    </div>
+  </div>
 </body>
 </html>

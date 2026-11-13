@@ -1,0 +1,42 @@
+body {
+    font-family: system-ui, sans-serif; max-width: 1000px;
+    margin: 1.5rem auto; padding: 0 1rem;
+}
+
+.controles {
+    display: flex;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+    align-items: end;
+    margin-bottom: 1rem;
+}
+
+label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9rem;
+}
+
+input[type=number] {
+    width: 6rem;
+}
+
+#grafica {
+    width: 100%;
+    height: 480px;
+}
+
+.resultado {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+}
+
+pre {
+    background: #f4f4f4;
+    padding: 0.8rem;
+    border-radius: 6px;
+    margin: 0.3rem 0;
+}
+
+#estado { color: #b00020; }
