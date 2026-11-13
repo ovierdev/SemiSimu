@@ -9,11 +9,26 @@ pub struct IvCurve {
     pub i: Vec<f64>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CsvLoad {
+    pub curve: IvCurve,
+    // Filas numericas descartadas por contener Nan o infinito
+    pub skipped: usize,
+}
+
 // Errores pisbles al cargar los datos
 #[derive(Debug)]
 pub enum DataError {
     Io(std::io::Error),
-    Parse { line: usize, content: String },
+    Parse {
+        line: usize,
+        content: String,
+    },
+    MissingColumn {
+        line: usize,
+        col: usize,
+        found: usize,
+    },
     Empty,
 }
 
@@ -24,6 +39,11 @@ impl fmt::Display for DataError {
             DataError::Parse { line, content } => {
                 write!(f, "linea {line} invalida: \"{content}\"")
             }
+            DataError::MissingColumn { line, col, found } => write!(
+                f,
+                " linea {line}: se pidio la columna {} pero solo hay {found}",
+                col + 1
+            ),
             DataError::Empty => write!(f, "el archivo no contiene datos"),
         }
     }
@@ -41,9 +61,12 @@ impl From<std::io::Error> for DataError {
 impl IvCurve {
     // interpreta text CSV con columnas I-V.
     // Ignora lineas vacia, comentarios (#) y encabezados antes del primer dato.
-    pub fn from_csv_str(text: &str) -> Result<Self, DataError> {
+    pub fn from_csv_columns(text: &str, v_col: usize, i_col: usize) -> Result<CsvLoad, DataError> {
         let mut v = Vec::new();
         let mut i = Vec::new();
+        let mut skipped = 0;
+        let mut filas_numericas = 0;
+        let necesarias = v_col.max(i_col) + 1;
 
         for (idx, raw) in text.lines().enumerate() {
             let line = raw.trim();
@@ -51,21 +74,26 @@ impl IvCurve {
                 continue;
             }
 
-            let mut cols = line.split(',').map(str::trim);
-            let (Some(a), Some(b)) = (cols.next(), cols.next()) else {
-                return Err(DataError::Parse {
+            let cols: Vec<&str> = line.split(',').map(str::trim).collect();
+            if cols.len() < necesarias {
+                return Err(DataError::MissingColumn {
                     line: idx + 1,
-                    content: line.to_string(),
+                    col: necesarias - 1,
+                    found: cols.len(),
                 });
-            };
+            }
 
-            match (a.parse::<f64>(), b.parse::<f64>()) {
+            match (cols[v_col].parse::<f64>(), cols[i_col].parse::<f64>()) {
                 (Ok(x), Ok(y)) => {
-                    v.push(x);
-                    i.push(y);
+                    filas_numericas += 1;
+                    if x.is_finite() && y.is_finite() {
+                        v.push(x);
+                        i.push(y);
+                    } else {
+                        skipped += 1;
+                    }
                 }
-                // Si todasvia no hay datos, asumimos que es el encabezado
-                _ if v.is_empty() => continue,
+                _ if filas_numericas == 0 => continue,
                 _ => {
                     return Err(DataError::Parse {
                         line: idx + 1,
@@ -78,9 +106,16 @@ impl IvCurve {
         if v.is_empty() {
             return Err(DataError::Empty);
         }
-        Ok(Self { v, i })
+        Ok(CsvLoad {
+            curve: Self { v, i },
+            skipped,
+        })
     }
-    // Lee un archivo CSV del disco
+
+    pub fn from_csv_str(text: &str) -> Result<Self, DataError> {
+        Self::from_csv_columns(text, 0, 1).map(|carga| carga.curve)
+    }
+
     pub fn from_csv_file(path: impl AsRef<Path>) -> Result<Self, DataError> {
         let text = fs::read_to_string(path)?;
         Self::from_csv_str(&text)
@@ -95,9 +130,56 @@ impl IvCurve {
     }
 }
 
+pub fn csv_headers(text: &str) -> Vec<String> {
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let cols: Vec<&str> = line.split(',').map(str::trim).collect();
+        let numerica = cols.iter().all(|c| c.parse::<f64>().is_ok());
+        return if numerica {
+            (1..=cols.len()).map(|k| format!("columna {k}")).collect()
+        } else {
+            cols.iter().map(|c| c.to_string()).collect()
+        };
+    }
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TRES_COLS: &str =
+        "v_set,v_meas,i_meas\n0.0,nan,nan\n0.1,0.086,2.2e-5\n0.2,0.186,1.1e-3\n";
+
+    #[test]
+    fn elige_columnas_y_descarta_nan() {
+        let carga = IvCurve::from_csv_columns(TRES_COLS, 1, 2).unwrap();
+        assert_eq!(carga.skipped, 1);
+        assert_eq!(carga.curve.len(), 2);
+        assert_eq!(carga.curve.v[0], 0.086);
+        assert_eq!(carga.curve.i[1], 1.1e-3);
+    }
+
+    #[test]
+    fn columna_inexistente() {
+        assert!(matches!(
+            IvCurve::from_csv_columns(TRES_COLS, 1, 5),
+            Err(DataError::MissingColumn {
+                col: 5,
+                found: 3,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn encabezados_con_y_sin_nombre() {
+        assert_eq!(csv_headers(TRES_COLS), ["v_set", "v_meas", "i_meas"]);
+        assert_eq!(csv_headers("# x\n0.1,1e-9\n"), ["columna 1", "columna 2"]);
+    }
 
     #[test]
     fn lee_con_comentario_y_encabezado() {

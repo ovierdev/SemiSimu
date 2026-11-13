@@ -14,9 +14,11 @@
     <label>Archivo CSV (V, I)
       <input type="file" id="archivo" accept=".csv,.txt">
     </label>
-    <label>T [K] <input type="number" id="temp" value="300" step="1"></label>
-    <label>V<sub>min</sub> [V] <input type="number" id="vmin" value="0.30" step="0.01"></label>
-    <label>V<sub>max</sub> [V] <input type="number" id="vmax" value="0.70" step="0.01"></label>
+    <label><span>Columna V</span><select id="colV"></select></label>
+    <label><span>Columna I</span><select id="colI"></select></label>
+    <label><span>T [K]</span> <input type="number" id="temp" value="300" step="1"></label>
+    <label><span>V<sub>min</sub> [V]</span> <input type="number" id="vmin" value="0.30" step="0.01"></label>
+    <label><span>V<sub>max</sub> [V]</span> <input type="number" id="vmax" value="0.70" step="0.01"></label>
     <label><span><input type="checkbox" id="escalaLog" checked> Escala log</span></label>
   </div>
 
