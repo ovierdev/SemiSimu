@@ -1,11 +1,12 @@
-import init, { csv_columns, extract_diode } from "./pkg/semifit_web.js";
-await init(); // carga el .wasm
+import init, { csv_columns, load_curve, extract_diode } from "./pkg/semifit_web.js";
+await init();
 
 const $ = (id) => document.getElementById(id);
 let csvTexto = null;
 let nombres = [];
 
-// Propone una columna buscando patrones en los nombres; el usuario puede cambiarla
+// --- Selectores de columnas ---
+
 function adivinar(patrones, porDefecto) {
   for (const p of patrones) {
     const k = nombres.findIndex((n) => p.test(n));
@@ -15,27 +16,59 @@ function adivinar(patrones, porDefecto) {
 }
 
 function llenarSelector(id, seleccion) {
-  $(id).innerHTML = nombres
-    .map((n, k) => `<option value="${k}" ${k === seleccion ? "selected" : ""}>${n}</option>`)
-    .join("");
+  // new Option() trata el nombre como texto, nunca como HTML
+  $(id).replaceChildren(...nombres.map((n, k) => new Option(n, k, false, k === seleccion)));
+}
+
+// Si el nombre de la columna trae la temperatura ("at 17C", "300 K"), la usa
+function temperaturaDeColumna(nombre) {
+  const m = nombre.match(/(-?\d+(?:\.\d+)?)\s*°?\s*([CK])\b/i);
+  if (!m) return null;
+  const valor = parseFloat(m[1]);
+  return m[2].toUpperCase() === "C" ? valor + 273.15 : valor;
+}
+
+function aplicarTemperatura() {
+  const t = temperaturaDeColumna(nombres[parseInt($("colI").value)] ?? "");
+  if (t !== null) $("temp").value = t.toFixed(2);
 }
 
 // --- Eventos ---
+
 $("archivo").addEventListener("change", async (e) => {
   csvTexto = await e.target.files[0].text();
   nombres = csv_columns(csvTexto);
   llenarSelector("colV", adivinar([/v.*meas/i, /volt/i, /^v/i], 0));
   llenarSelector("colI", adivinar([/i.*meas/i, /curr/i, /^i/i], Math.min(1, nombres.length - 1)));
+  aplicarTemperatura();
   actualizar();
 });
 $("colV").addEventListener("change", actualizar);
-$("colI").addEventListener("change", actualizar);
+$("colI").addEventListener("change", () => {
+  aplicarTemperatura();
+  actualizar();
+});
 for (const id of ["temp", "vmin", "vmax"]) $(id).addEventListener("input", actualizar);
 $("escalaLog").addEventListener("change", actualizar);
 $("copiar").addEventListener("click", () =>
   navigator.clipboard.writeText($("tarjeta").textContent));
 
 // --- Cálculo y gráfica ---
+
+function limpiarResultados() {
+  $("params").textContent = "—";
+  $("tarjeta").textContent = "—";
+  $("avisos").replaceChildren();
+}
+
+function mostrarAvisos(lista) {
+  $("avisos").replaceChildren(...lista.map((texto) => {
+    const li = document.createElement("li");
+    li.textContent = texto;
+    return li;
+  }));
+}
+
 function actualizar() {
   if (!csvTexto) return;
 
@@ -43,6 +76,8 @@ function actualizar() {
   const iCol = parseInt($("colI").value);
   if (vCol === iCol) {
     $("estado").textContent = "Elige columnas distintas para V e I.";
+    limpiarResultados();
+    Plotly.purge("grafica");
     return;
   }
 
@@ -50,32 +85,47 @@ function actualizar() {
   const vmin = parseFloat($("vmin").value);
   const vmax = parseFloat($("vmax").value);
 
-  let r;
+  // 1) Datos: se grafican aunque el ajuste falle
+  let datos;
   try {
-    r = extract_diode(csvTexto, vCol, iCol, t, vmin, vmax);
+    datos = load_curve(csvTexto, vCol, iCol);
   } catch (err) {
     $("estado").textContent = "Error: " + err.message;
+    limpiarResultados();
+    Plotly.purge("grafica");
     return;
   }
-  $("estado").textContent = "";
+  const v = Array.from(datos.v);
+  const iMeas = Array.from(datos.i);
+  const descartadas = datos.skipped;
+  datos.free();
 
-  $("params").textContent =
-    `Is = ${r.is.toExponential(4)} A\n` +
-    `n  = ${r.n.toFixed(4)}\n` +
-    `R² = ${r.r2.toFixed(6)}\n` +
-    `Puntos en ventana: ${r.points_used}\n` +
-    `Filas descartadas (NaN/inf): ${r.skipped}`;
-  $("tarjeta").textContent = r.model_card;
-
-  const v = Array.from(r.v);
-  const iMeas = Array.from(r.i_meas);
-  const iModel = Array.from(r.i_model);
-  r.free(); // libera la memoria del lado de Rust
-
-  Plotly.react("grafica", [
+  const trazas = [
     { x: v, y: iMeas, mode: "markers", name: "Medición", marker: { size: 6 } },
-    { x: v, y: iModel, mode: "lines", name: "Modelo", line: { width: 2 } },
-  ], {
+  ];
+
+  // 2) Ajuste: si falla, se avisa pero la gráfica de datos se mantiene
+  $("estado").textContent = "";
+  try {
+    const r = extract_diode(csvTexto, vCol, iCol, t, vmin, vmax);
+    trazas.push({ x: v, y: Array.from(r.i_model), mode: "lines", name: "Modelo", line: { width: 2 } });
+
+    $("params").textContent =
+      `Is = ${r.is.toExponential(4)} A\n` +
+      `n  = ${r.n.toFixed(4)}\n` +
+      `R² = ${r.r2.toFixed(6)}\n` +
+      `Error RMS = ${r.rms_pct.toFixed(1)} %\n` +
+      `Puntos en ventana: ${r.points_used}\n` +
+      `Filas descartadas (NaN/inf): ${descartadas}`;
+    $("tarjeta").textContent = r.model_card;
+    mostrarAvisos(r.warnings);
+    r.free();
+  } catch (err) {
+    $("estado").textContent = "Error: " + err.message;
+    limpiarResultados();
+  }
+
+  Plotly.react("grafica", trazas, {
     xaxis: { title: { text: `${nombres[vCol]} [V]` } },
     yaxis: {
       title: { text: `${nombres[iCol]} [A]` },

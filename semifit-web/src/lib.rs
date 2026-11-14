@@ -4,24 +4,41 @@ use semifit_core::models::diode::current;
 use semifit_core::spice::diode_model_card;
 use wasm_bindgen::prelude::*;
 
-/// Resultado visible desde JavaScript
+/// Datos medidos, listos para graficar
+#[wasm_bindgen(getter_with_clone)]
+pub struct CurveData {
+    pub v: Vec<f64>,
+    pub i: Vec<f64>,
+    pub skipped: usize,
+}
+
+/// Resultado del ajuste
 #[wasm_bindgen(getter_with_clone)]
 pub struct DiodeResult {
     pub is: f64,
     pub n: f64,
     pub r2: f64,
+    pub rms_pct: f64,
     pub points_used: usize,
-    pub skipped: usize,
     pub model_card: String,
-    pub v: Vec<f64>,
-    pub i_meas: Vec<f64>,
+    /// Corriente del modelo en los mismos voltajes que CurveData.v
     pub i_model: Vec<f64>,
+    pub warnings: Vec<String>,
 }
 
-/// Nombres de columnas para llenar los selectores
 #[wasm_bindgen]
 pub fn csv_columns(csv: &str) -> Vec<String> {
     csv_headers(csv)
+}
+
+#[wasm_bindgen]
+pub fn load_curve(csv: &str, v_col: usize, i_col: usize) -> Result<CurveData, JsError> {
+    let carga = IvCurve::from_csv_columns(csv, v_col, i_col)?;
+    Ok(CurveData {
+        v: carga.curve.v,
+        i: carga.curve.i,
+        skipped: carga.skipped,
+    })
 }
 
 #[wasm_bindgen]
@@ -33,8 +50,7 @@ pub fn extract_diode(
     v_min: f64,
     v_max: f64,
 ) -> Result<DiodeResult, JsError> {
-    let carga = IvCurve::from_csv_columns(csv, v_col, i_col)?;
-    let curva = carga.curve;
+    let curva = IvCurve::from_csv_columns(csv, v_col, i_col)?.curve;
     let r = diode_log_fit(&curva, t, v_min, v_max)?;
     let i_model = curva.v.iter().map(|&v| current(&r.params, v, t)).collect();
 
@@ -42,11 +58,10 @@ pub fn extract_diode(
         is: r.params.is,
         n: r.params.n,
         r2: r.r2,
+        rms_pct: r.rms_pct,
         points_used: r.points_used,
-        skipped: carga.skipped,
         model_card: diode_model_card("DFIT", &r.params),
-        v: curva.v,
-        i_meas: curva.i,
         i_model,
+        warnings: r.warnings.iter().map(|w| w.to_string()).collect(),
     })
 }

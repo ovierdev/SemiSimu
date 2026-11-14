@@ -40,3 +40,12 @@ pre {
 }
 
 #estado { color: #b00020; }
+
+
+#avisos {
+  background: #fff8e1;
+  border-left: 4px solid #f0a500;
+  padding: 0.6rem 1rem 0.6rem 2rem;
+  margin: 0.5rem 0;
+}
+#avisos:empty { display: none; }
